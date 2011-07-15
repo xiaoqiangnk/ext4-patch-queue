@@ -1,0 +1,27 @@
+ext4: prevent a fs with errors from being resized
+
+A filesystem with errors is not allowed to being resized, otherwise, it is
+easy to destroy the filesystem.
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 29cdda6..3cc28e7 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2278,6 +2278,16 @@ static inline int ext4_resize_begin(struct super_block *sb)
+ 	if (!capable(CAP_SYS_RESOURCE))
+ 		return -EPERM;
+ 
++	/*
++	 * We are not allowed to do online-resizing on a filesystem mounted
++	 * with error, because it can destroy the filesystem easily.
++	 */
++	if (EXT4_SB(sb)->s_mount_state & EXT4_ERROR_FS) {
++		ext4_warning(sb, "There are errors in the filesystem, "
++			     "so online resizing is not allowed\n");
++		return -EIO;
++	}
++
+ 	if (test_and_set_bit_lock(EXT4_RESIZING, &EXT4_SB(sb)->s_resize_flags))
+ 		ret = -EBUSY;
+ 

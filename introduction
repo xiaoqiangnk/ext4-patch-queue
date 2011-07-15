@@ -1,0 +1,16 @@
+This patch series did 5 things:
+
+-- prevent parallel resizer
+
+-- fix some bugs and typos
+   there are dome bugs and typos in current resize implementation
+
+-- rearrange code used by current resize
+   so that common code could be used by new resize
+
+-- let current resize be able to handle BLOCK_UNINIT group
+   This can accelerate resizing
+
+-- add new resize implementation
+   new-resize can support flex_bg and BLOCK_UNINIT, and adds a flex groups
+   each time, so it is very fast.
