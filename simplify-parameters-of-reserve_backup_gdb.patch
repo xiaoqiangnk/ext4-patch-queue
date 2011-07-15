@@ -5,7 +5,7 @@ a pointer to struct ext4_new_group_data.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index a9ec26c..a35967f 100644
+index 83685ed..3d9fd67 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
 @@ -523,7 +523,7 @@ exit_bh:

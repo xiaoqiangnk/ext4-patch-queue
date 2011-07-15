@@ -5,9 +5,10 @@ rename-ext4_add_groupblocks-toext4_group_add_blocks.patch
 let-ext4_group_add-return-error-code.patch
 let-ext4_group_add_blocks-handle-zero-blocks.patch
 Fix-a-typo-in-ext4_group_extend.patch
-move-core-code-in-ext4_group_extend-to-a-function.patch
-let-ext4_group_extend-call-__ext4_group_extend.patch
 simplify-parameters-of-add_new_gdb.patch
 simplify-parameters-of-reserve_backup_gdb.patch
+move-core-code-in-ext4_group_extend-to-a-function.patch
 split-core-code-of-ext4_gtoup_add-to-three-functions.patch
+add_a_structure_supporting_resize64.patch
+let-ext4_group_extend-call-__ext4_group_extend.patch
 let-ext4_group_add-call-functions-added-in-last-patch.patch

@@ -5,10 +5,10 @@ last patch.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index e30c2ed..a3a9661 100644
+index 0114b14..bfcc4be 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -1003,8 +1003,6 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -1178,8 +1178,6 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
  	ext4_grpblk_t last;
  	ext4_grpblk_t add;
  	struct buffer_head *bh;
@@ -17,7 +17,7 @@ index e30c2ed..a3a9661 100644
  	ext4_group_t group;
  
  	o_blocks_count = ext4_blocks_count(es);
-@@ -1060,42 +1058,5 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -1235,42 +1233,5 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
  	}
  	brelse(bh);
  

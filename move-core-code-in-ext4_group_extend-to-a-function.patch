@@ -8,10 +8,10 @@ Next patch will let ext4_group_extend() use __ext4_group_extend().
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index c1d9520..e30c2ed 100644
+index 3d9fd67..ff43da2 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -934,6 +934,59 @@ exit_put:
+@@ -940,6 +940,59 @@ exit_put:
  } /* ext4_group_add */
  
  /*
