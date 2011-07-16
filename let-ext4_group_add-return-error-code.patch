@@ -3,7 +3,7 @@ ext4: let ext4_group_add_blocks return an error code
 This patch lets ext4_group_add_blocks() return an error code if it fails,
 so that upper functions can handle error correctly.
 
-Signed-off-by; Yongqiang Yang <xiaoqiangnk@gmail.com>
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 7d5d3b1..d58ed51 100644
 --- a/fs/ext4/ext4.h
@@ -18,7 +18,7 @@ index 7d5d3b1..d58ed51 100644
  extern int ext4_trim_fs(struct super_block *, struct fstrim_range *);
  
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index ea80c0b..7d83bfb 100644
+index ea80c0b..33c41e6 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -4664,7 +4664,7 @@ error_return:
@@ -43,11 +43,10 @@ index ea80c0b..7d83bfb 100644
 +	}
  
  	bitmap_bh = ext4_read_block_bitmap(sb, block_group);
--	if (!bitmap_bh)
+ 	if (!bitmap_bh)
 -		goto error_return;
-+	if (!bitmap_bh) {
 +		return -EIO;
-+	}
++
  	desc = ext4_get_group_desc(sb, block_group, &gd_bh);
 -	if (!desc)
 +	if (!desc) {

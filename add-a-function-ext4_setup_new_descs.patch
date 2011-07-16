@@ -1,0 +1,27 @@
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index f474ace..53e3d5a 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -1104,6 +1104,22 @@ static int ext4_setup_new_desc(handle_t *handle, struct super_block *sb,
+ }
+ 
+ /*
++ * ext4_setup_new_descs setups group descriptors of a flex groups
++ */
++static int ext4_setup_new_descs(handle_t *handle, struct super_block *sb,
++				struct ext4_new_flex_group_data *flex_gd)
++{
++	struct ext4_new_group_data * group_data = flex_gd->groups;
++	int i;
++
++	for (i = 0; i < flex_gd->count; i++) {
++		err = ext4_setup_new_desc(handle, sb, group_data + i);
++		if (err)
++			return err;
++	}
++}
++
++/*
+  * ext4_update_super() updates super so that new the added group can be seen
+  *   by the filesystem.
+  *
