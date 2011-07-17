@@ -1,3 +1,9 @@
+ext4: add a function which sets up a flex groups' group blocks
+
+This patch adds a function named setup_new_flex_group_blocks() which
+sets up a flex groups' group blocks each time.
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
 index 19dee60..9c43561 100644
 --- a/fs/ext4/ext4.h
@@ -18,10 +24,10 @@ index 19dee60..9c43561 100644
   * Flags used by ext4_map_blocks()
   */
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index adb2036..f474ace 100644
+index be860ec..06d8194 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -208,6 +208,255 @@ static int extend_or_restart_transaction(handle_t *handle, int thresh,
+@@ -206,6 +206,255 @@ static int extend_or_restart_transaction(handle_t *handle, int thresh)
  }
  
  /*
@@ -90,15 +96,15 @@ index adb2036..f474ace 100644
 + * ensure the recovery is correct in case of a failure just after resize.
 + * If any part of this fails, we simply abort the resize.
 + *
-+ * setup_new_group_blocks handles a flex group as follow:
++ * setup_new_flex_group_blocks handles a flex group as follow:
 + *  1. copy super block and GDT, and initialize group tables if necessary.
 + *     In this step, we only set bits in blocks bitmaps for blocks taken by
 + *     super block and GDT.
 + *  2. allocate group tables in block bitmaps, that is, set bits in block
 + *     bitmap for blocks taken by group tables.
 + */
-+static int setup_new_group_blocks(struct super_block *sb,
-+				  struct ext4_new_flex_group_data *flex_gd)
++static int setup_new_flex_group_blocks(struct super_block *sb,
++				struct ext4_new_flex_group_data *flex_gd)
 +{
 +	char *group_tables_name[] = {"block bitmap", "inode bitmap",
 +				     "inode table"};
@@ -238,21 +244,21 @@ index adb2036..f474ace 100644
 +	bh = NULL;
 +
 +	/* Mark group tables in block bitmap */
-+	for (j = 0; j < GROUP_TABLES_COUNT; j++) {
-+		count = group_tables_count[j];
-+		start = group_data[0].block_bitmap[j];
++	for (j = 0; j < GROUP_TABLE_COUNT; j++) {
++		count = group_table_count[j];
++		start = (&group_data[0].block_bitmap)[j];
 +		block = start;
 +		for (i = 1; i < flex_gd->count; i++) {
-+			block += group_tables_count[j];
-+			if (block == group_data[i].block_bitmap[j]) {
-+				count += group_tables_count[j];
++			block += group_table_count[j];
++			if (block == (&group_data[i].block_bitmap)[j]) {
++				count += group_table_count[j];
 +				continue;
 +			}
 +			err = set_flexbg_block_bitmap(sb, handle,
 +						flex_gd, start, count);
 +			if (err)
 +				goto out;
-+			count = group_tables_count[j];
++			count = group_table_count[j];
 +			start = group_data[i].block_bitmap;
 +			block = start;
 +		}

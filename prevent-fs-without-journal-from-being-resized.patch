@@ -1,0 +1,27 @@
+ext4: prevent a fs without journal from being resized
+
+This patch prevents a fs without journal from being resized, because
+it is easy to detroy the fs.
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index c833bc1..a747f66 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2299,6 +2299,16 @@ static inline int ext4_resize_begin(struct super_block *sb)
+ 		return -EIO;
+ 	}
+ 
++	/*
++	 * We are not allowed to do online-resizing on a filesystem without
++	 * journal, otherwise, it is easy to destroy the filesystem.
++	 */
++	if (!EXT4_SB(sb)->s_journal) {
++		ext4_warning(sb, "There is no joural for the filesystem, "
++			     "so online resizing is not allowed\n");
++		return -EIO;
++	}
++
+ 	if (test_and_set_bit_lock(EXT4_RESIZING, &EXT4_SB(sb)->s_resize_flags))
+ 		ret = -EBUSY;
+ 
