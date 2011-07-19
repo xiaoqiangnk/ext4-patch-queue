@@ -94,10 +94,10 @@ index f18bfe3..eeaa1a4 100644
  	{
  		struct super_block *sb = inode->i_sb;
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index dddc6f1..696bfca 100644
+index c60a4f0..e20478d 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -1861,3 +1861,175 @@ exit_journal:
+@@ -1864,3 +1864,174 @@ exit_journal:
  exit:
  	return err;
  }
@@ -116,10 +116,7 @@ index dddc6f1..696bfca 100644
 +	ext4_grpblk_t last;
 +	ext4_grpblk_t blocks_per_group;
 +	unsigned long i;
-+	int overhead;
 +
-+	overhead = 1 + ext4_bg_num_gdb(sb, group) +
-+		   le16_to_cpu(es->s_reserved_gdt_blocks);
 +	blocks_per_group = EXT4_BLOCKS_PER_GROUP(sb);
 +
 +	o_blocks_count = ext4_blocks_count(es);
@@ -138,12 +135,14 @@ index dddc6f1..696bfca 100644
 +	flex_gd->count = last_group - group + 1;
 +
 +	for (i = 0; i < flex_gd->count; i++) {
-+		int has_super;
++		int overhead;
++
 +		group_data[i].group = group + i;
 +		group_data[i].blocks_count = blocks_per_group;
-+		has_super = ext4_bg_has_super(sb, group + i);
-+		group_data[i].free_blocks_count = blocks_per_group -
-+				(has_super ? overhead : 0);
++		overhead = ext4_bg_has_super(sb, group + i) ?
++			   (1 + ext4_bg_num_gdb(sb, group + i) +
++			    le16_to_cpu(es->s_reserved_gdt_blocks)) : 0;
++		group_data[i].free_blocks_count = blocks_per_group - overhead;
 +		if (EXT4_HAS_RO_COMPAT_FEATURE(sb,
 +					       EXT4_FEATURE_RO_COMPAT_GDT_CSUM))
 +			flex_gd->bg_flags[i] = EXT4_BG_BLOCK_UNINIT |
