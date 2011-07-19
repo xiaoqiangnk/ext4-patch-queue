@@ -14,3 +14,25 @@ This patch series did 5 things:
 -- add new resize implementation
    new-resize can support flex_bg and BLOCK_UNINIT, and adds a flex groups
    each time, so it is very fast.
+
+Introduction for new resize implementation.
+
+  The patch series add new resize implementation to ext4.
+
+  1. What's new resize implementation?
+     It is a new online resize interface for ext4.  It can be used via
+     ioctl with EXT4_IOC_RESIZE_FS and a 64 bit integer indicating size
+     of the resized fs in block.
+
+  2. What's difference between current resize and new resize?
+     New resize lets kernel do all work like allocating bitmaps and
+     inode tables and can support flex_bg and BLOCK_UNINIT features.
+     Besides these, new resize is very fast like mkfs.ext4.
+
+     benchmarks:
+
+  3. Can new resize support new features like bigalloc and exclude bitmap
+     in feature?
+     YES! New resize can support new feature like bigalloc and exclude bitmap
+     easily.  Because it let kernel do all work.
+ 
