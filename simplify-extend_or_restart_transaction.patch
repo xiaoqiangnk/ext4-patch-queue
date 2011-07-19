@@ -1,9 +1,23 @@
-ext4: simplify journal handling in ext4_setup_new_group_blocks
+ext4: simplify journal handling in setup_new_group_blocks()
+
+This patch simplifies journal handling in setup_new_group_blocks().
+
+In previous code, block bitmap is modified everywhere in
+setup_new_group_blocks(), ext4_get_write_access() in
+extend_or_restart_transaction() is used to guarantee that the block bitmap
+stays in the new handle, this makes things complicated.
+
+In this patch the modifications on the block bitmap are batched and done
+by ext4_set_bits() after reqesting a handle from extend_or_restart_transaction()
+with enough credits.  So ext4_get_write_access() can be removed from
+extend_or_restart_transaction().
+
+Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 55f0857..2799593 100644
+index 178fb2f..5b423f8 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -132,8 +132,7 @@ static struct buffer_head *bclean(handle_t *handle, struct super_block *sb,
+@@ -161,8 +161,7 @@ static struct buffer_head *bclean(handle_t *handle, struct super_block *sb,
   * If that fails, restart the transaction & regain write access for the
   * buffer head which is used for block_bitmap modifications.
   */
@@ -13,7 +27,7 @@ index 55f0857..2799593 100644
  {
  	int err;
  
-@@ -144,9 +143,8 @@ static int extend_or_restart_transaction(handle_t *handle, int thresh,
+@@ -173,9 +172,8 @@ static int extend_or_restart_transaction(handle_t *handle, int thresh,
  	if (err < 0)
  		return err;
  	if (err) {
@@ -25,7 +39,7 @@ index 55f0857..2799593 100644
  			return err;
  	}
  
-@@ -183,29 +181,24 @@ static int setup_new_group_blocks(struct super_block *sb,
+@@ -212,29 +210,24 @@ static int setup_new_group_blocks(struct super_block *sb,
  
  	BUG_ON(input->group != sbi->s_groups_count);
  
@@ -60,7 +74,7 @@ index 55f0857..2799593 100644
  		}
  		lock_buffer(gdb);
  		memcpy(gdb->b_data, sbi->s_group_desc[i]->b_data, gdb->b_size);
-@@ -214,7 +207,7 @@ static int setup_new_group_blocks(struct super_block *sb,
+@@ -243,7 +236,7 @@ static int setup_new_group_blocks(struct super_block *sb,
  		err = ext4_handle_dirty_metadata(handle, NULL, gdb);
  		if (unlikely(err)) {
  			brelse(gdb);
@@ -69,7 +83,7 @@ index 55f0857..2799593 100644
  		}
  		brelse(gdb);
  	}
-@@ -225,7 +218,17 @@ static int setup_new_group_blocks(struct super_block *sb,
+@@ -254,7 +247,17 @@ static int setup_new_group_blocks(struct super_block *sb,
  	err = sb_issue_zeroout(sb, gdblocks + start + 1, reserved_gdb,
  			       GFP_NOFS);
  	if (err)
@@ -88,7 +102,7 @@ index 55f0857..2799593 100644
  
  	if (ext4_bg_has_super(sb, input->group)) {
  		ext4_debug("mark backup group tables %#04llx (+0)\n", start);
-@@ -249,8 +252,6 @@ static int setup_new_group_blocks(struct super_block *sb,
+@@ -278,8 +281,6 @@ static int setup_new_group_blocks(struct super_block *sb,
  	ext4_set_bits(bh->b_data, input->inode_table - start,
  		      sbi->s_itb_per_group);
  

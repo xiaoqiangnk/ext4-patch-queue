@@ -1,4 +1,4 @@
-ext4: let setup_new_group_blocks set multi-bits each time
+ext4: let setup_new_group_blocks() set multi-bits each time
 
 This patch adds a function - ext4_set_btis() which can set multi-bits
 each time, and lets setup_new_group_blocks() use ext4_set_bits().
@@ -6,7 +6,7 @@ each time, and lets setup_new_group_blocks() use ext4_set_bits().
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index d58ed51..19dee60 100644
+index da7ab48..43e7448 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -940,6 +940,7 @@ struct ext4_inode_info {
@@ -18,7 +18,7 @@ index d58ed51..19dee60 100644
   * Maximal mount counts between two filesystem checks
   */
 diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
-index 8a755e9..d0b7c1a 100644
+index 397e27c..1efbfea 100644
 --- a/fs/ext4/mballoc.c
 +++ b/fs/ext4/mballoc.c
 @@ -1299,6 +1299,11 @@ static void mb_set_bits(void *bm, int cur, int len)
@@ -34,10 +34,10 @@ index 8a755e9..d0b7c1a 100644
  			  int first, int count)
  {
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index c1d9520..55f0857 100644
+index 5f0aefd..178fb2f 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -188,11 +188,6 @@ static int setup_new_group_blocks(struct super_block *sb,
+@@ -217,11 +217,6 @@ static int setup_new_group_blocks(struct super_block *sb,
  		goto exit_journal;
  	}
  
@@ -49,7 +49,7 @@ index c1d9520..55f0857 100644
  	/* Copy all of the GDT blocks into the backup in this group */
  	for (i = 0, bit = 1, block = start + 1;
  	     i < gdblocks; i++, block++, bit++) {
-@@ -221,7 +216,6 @@ static int setup_new_group_blocks(struct super_block *sb,
+@@ -250,7 +245,6 @@ static int setup_new_group_blocks(struct super_block *sb,
  			brelse(gdb);
  			goto exit_bh;
  		}
@@ -57,7 +57,7 @@ index c1d9520..55f0857 100644
  		brelse(gdb);
  	}
  
-@@ -232,8 +226,11 @@ static int setup_new_group_blocks(struct super_block *sb,
+@@ -261,8 +255,11 @@ static int setup_new_group_blocks(struct super_block *sb,
  			       GFP_NOFS);
  	if (err)
  		goto exit_bh;
@@ -66,12 +66,12 @@ index c1d9520..55f0857 100644
 +
 +	if (ext4_bg_has_super(sb, input->group)) {
 +		ext4_debug("mark backup group tables %#04llx (+0)\n", start);
-+		ext4_set_bits(bh->b_data, 0, gdblocks + reserved_gdb);
++		ext4_set_bits(bh->b_data, 0, gdblocks + reserved_gdb + 1);
 +	}
  
  	ext4_debug("mark block bitmap %#04llx (+%llu)\n", input->block_bitmap,
  		   input->block_bitmap - start);
-@@ -249,9 +246,8 @@ static int setup_new_group_blocks(struct super_block *sb,
+@@ -278,9 +275,8 @@ static int setup_new_group_blocks(struct super_block *sb,
  	err = sb_issue_zeroout(sb, block, sbi->s_itb_per_group, GFP_NOFS);
  	if (err)
  		goto exit_bh;

@@ -4,16 +4,17 @@ This patch enables ext4_update_super() to handle a flex groups.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 24c3163..5a7cce2 100644
+index 17001ac..da334b7 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -1146,17 +1146,24 @@ static int ext4_setup_new_descs(handle_t *handle, struct super_block *sb,
+@@ -1178,17 +1178,24 @@ static int ext4_setup_new_descs(handle_t *handle, struct super_block *sb,
  }
  
  /*
 - * ext4_update_super() updates super so that new the added group can be seen
-+ * ext4_update_super() updates super so that new added groups can be saw
-  *   by the filesystem.
+- *   by the filesystem.
++ * ext4_update_super() updates super block so that new added groups can be seen
++ * by the filesystem.
   *
   * @sb: super block
 + * @flex_gd: new added groups
@@ -34,7 +35,7 @@ index 24c3163..5a7cce2 100644
  	/*
  	 * Make the new blocks and inodes valid next.  We do this before
  	 * increasing the group count so that once the group is enabled,
-@@ -1167,9 +1174,19 @@ static void ext4_update_super(struct super_block *sb,
+@@ -1199,9 +1206,19 @@ static void ext4_update_super(struct super_block *sb,
  	 * blocks/inodes before the group is live won't actually let us
  	 * allocate the new space yet.
  	 */
@@ -57,7 +58,7 @@ index 24c3163..5a7cce2 100644
  
  	/*
  	 * We need to protect s_groups_count against other CPUs seeing
-@@ -1177,11 +1194,11 @@ static void ext4_update_super(struct super_block *sb,
+@@ -1209,11 +1226,11 @@ static void ext4_update_super(struct super_block *sb,
  	 *
  	 * The precise rules we use are:
  	 *
@@ -73,12 +74,11 @@ index 24c3163..5a7cce2 100644
  	 *
  	 * NB. These rules can be relaxed when checking the group count
  	 * while freeing data, as we can only allocate from a block
-@@ -1192,30 +1209,34 @@ static void ext4_update_super(struct super_block *sb,
+@@ -1224,29 +1241,34 @@ static void ext4_update_super(struct super_block *sb,
  	smp_wmb();
  
  	/* Update the global fs size fields */
 -	sbi->s_groups_count++;
--
 +	sbi->s_groups_count += flex_gd->count;
  
  	/* Update the reserved block counts only once the new group is

@@ -10,7 +10,7 @@ a resizer.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 62cee2b..29cdda6 100644
+index 62cee2b..bb0f776 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
 @@ -1127,7 +1127,8 @@ struct ext4_sb_info {
@@ -23,29 +23,13 @@ index 62cee2b..29cdda6 100644
  	unsigned long s_commit_interval;
  	u32 s_max_batch_time;
  	u32 s_min_batch_time;
-@@ -2269,6 +2270,26 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
+@@ -2269,6 +2270,10 @@ static inline void set_bitmap_uptodate(struct buffer_head *bh)
  extern wait_queue_head_t ext4__ioend_wq[EXT4_WQ_HASH_SZ];
  extern struct mutex ext4__aio_mutex[EXT4_WQ_HASH_SZ];
  
 +#define EXT4_RESIZING	0
-+static inline int ext4_resize_begin(struct super_block *sb)
-+{
-+	int ret = 0;
-+
-+	if (!capable(CAP_SYS_RESOURCE))
-+		return -EPERM;
-+
-+	if (test_and_set_bit_lock(EXT4_RESIZING, &EXT4_SB(sb)->s_resize_flags))
-+		ret = -EBUSY;
-+
-+	return ret;
-+}
-+
-+static inline void ext4_resize_end(struct super_block *sb)
-+{
-+	clear_bit_unlock(EXT4_RESIZING, &EXT4_SB(sb)->s_resize_flags);
-+	smp_mb__after_clear_bit();
-+}
++extern int ext4_resize_begin(struct super_block *sb);
++extern void ext4_resize_end(struct super_block *sb);
 +
  #endif	/* __KERNEL__ */
  
@@ -95,10 +79,36 @@ index 808c554..f18bfe3 100644
  		return err;
  	}
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 80bbc9c..5215733 100644
+index 80bbc9c..0213f63 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -181,11 +181,7 @@ static int setup_new_group_blocks(struct super_block *sb,
+@@ -16,6 +16,25 @@
+ 
+ #include "ext4_jbd2.h"
+ 
++int ext4_resize_begin(struct super_block *sb)
++{
++	int ret = 0;
++
++	if (!capable(CAP_SYS_RESOURCE))
++		return -EPERM;
++
++	if (test_and_set_bit_lock(EXT4_RESIZING, &EXT4_SB(sb)->s_resize_flags))
++		ret = -EBUSY;
++
++	return ret;
++}
++
++void ext4_resize_end(struct super_block *sb)
++{
++	clear_bit_unlock(EXT4_RESIZING, &EXT4_SB(sb)->s_resize_flags);
++	smp_mb__after_clear_bit();
++}
++
+ #define outside(b, first, last)	((b) < (first) || (b) >= (last))
+ #define inside(b, first, last)	((b) >= (first) && (b) < (last))
+ 
+@@ -181,11 +200,7 @@ static int setup_new_group_blocks(struct super_block *sb,
  	if (IS_ERR(handle))
  		return PTR_ERR(handle);
  
@@ -111,7 +121,7 @@ index 80bbc9c..5215733 100644
  
  	if (IS_ERR(bh = bclean(handle, sb, input->block_bitmap))) {
  		err = PTR_ERR(bh);
-@@ -285,7 +281,6 @@ exit_bh:
+@@ -285,7 +300,6 @@ exit_bh:
  	brelse(bh);
  
  exit_journal:
@@ -119,7 +129,7 @@ index 80bbc9c..5215733 100644
  	if ((err2 = ext4_journal_stop(handle)) && !err)
  		err = err2;
  
-@@ -799,13 +794,6 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -799,13 +813,6 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
  		goto exit_put;
  	}
  
@@ -133,7 +143,7 @@ index 80bbc9c..5215733 100644
  	if ((err = ext4_journal_get_write_access(handle, sbi->s_sbh)))
  		goto exit_journal;
  
-@@ -829,7 +817,6 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -829,7 +836,6 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
          /*
           * OK, now we've set up the new group.  Time to make it active.
           *
@@ -141,7 +151,7 @@ index 80bbc9c..5215733 100644
           * so we have to be safe wrt. concurrent accesses the group
           * data.  So we need to be careful to set all of the relevant
           * group descriptor data etc. *before* we enable the group.
-@@ -886,13 +873,9 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -886,13 +892,9 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
  	 *
  	 * The precise rules we use are:
  	 *
@@ -155,7 +165,7 @@ index 80bbc9c..5215733 100644
  	 * * Readers must perform an smp_rmb() after reading the groups count
  	 *   and before reading any dependent data.
  	 *
-@@ -937,7 +920,6 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
+@@ -937,7 +939,6 @@ int ext4_group_add(struct super_block *sb, struct ext4_new_group_data *input)
  	ext4_handle_dirty_super(handle, sb);
  
  exit_journal:
@@ -163,7 +173,7 @@ index 80bbc9c..5215733 100644
  	if ((err2 = ext4_journal_stop(handle)) && !err)
  		err = err2;
  	if (!err) {
-@@ -972,9 +954,6 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -972,9 +973,6 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
  	int err;
  	ext4_group_t group;
  
@@ -173,7 +183,7 @@ index 80bbc9c..5215733 100644
  	o_blocks_count = ext4_blocks_count(es);
  
  	if (test_opt(sb, DEBUG))
-@@ -995,7 +974,7 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -995,7 +993,7 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
  
  	if (n_blocks_count < o_blocks_count) {
  		ext4_warning(sb, "can't shrink FS - resize aborted");
@@ -182,7 +192,7 @@ index 80bbc9c..5215733 100644
  	}
  
  	/* Handle the remaining blocks in the last group only. */
-@@ -1038,24 +1017,13 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
+@@ -1038,24 +1036,13 @@ int ext4_group_extend(struct super_block *sb, struct ext4_super_block *es,
  		goto exit_put;
  	}
  

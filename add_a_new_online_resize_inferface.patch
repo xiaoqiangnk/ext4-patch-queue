@@ -1,16 +1,20 @@
-ext4: add 64bit online resize interface
+ext4: add new online resize interface
 
-This patch adds 64bit online resize interface, whose input argument is a
-64bit integer indicating how many blocks there are in the resized fs. Bitmap
-blocks and inode tables are allocated by kernel, so the new resize interface
-can support flex_bg feature and userspace tools just passes in the new number
-of blocks.
+This patch adds new online resize interface, whose input argument is a
+64-bit integer indicating how many blocks there are in the resized fs.
 
-We delay initializing the bitmaps and inode tables of added groups if possible.
+In new resize impelmentation, all work like allocating group tables are done
+by kernel side, so the new resize interface can support flex_bg feature and
+prepares ground for suppoting resize with features like bigalloc and exclude
+bitmap. Besides these, user-space tools just passes in the new number of blocks.
+
+We delay initializing the bitmaps and inode tables of added groups if possible
+and add multi groups (a flex groups) each time, so new resize is very fast like
+mkfs.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/Documentation/filesystems/ext4.txt b/Documentation/filesystems/ext4.txt
-index 3ae9bc9..7365b3d 100644
+index 3ae9bc9..d84eaba 100644
 --- a/Documentation/filesystems/ext4.txt
 +++ b/Documentation/filesystems/ext4.txt
 @@ -599,6 +599,13 @@ Table of Ext4 specific ioctls
@@ -18,58 +22,51 @@ index 3ae9bc9..7365b3d 100644
  			      not necessary and has been done this way only
  			      for sake of simplicity.
 +
-+ EXT4_IOC_RESIZE	      Resize the filesystem to a new size.  The number
-+			      of blocks of resized filesystem is passed via a
-+			      64 bit argument.  The kernel allocates bitmap
-+			      blockd and inode table, the userspace tool thus
++ EXT4_IOC_RESIZE_FS	      Resize the filesystem to a new size.  The number
++			      of blocks of resized filesystem is passed in via
++			      64 bit integer argument.  The kernel allocates
++			      bitmaps and inode table, the userspace tool thus
 +			      just passes the new number of blocks.
 +
  ..............................................................................
  
  References
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 85738fe..5f18f1a 100644
+index c00f839..eefebd4 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -41,6 +41,7 @@
-  * Define EXT4FS_DEBUG to produce debug messages
-  */
- #undef EXT4FS_DEBUG
-+#define EXT4FS_DEBUG
- 
- /*
-  * Debug code
-@@ -548,6 +549,7 @@ struct ext4_new_group_data {
+@@ -557,6 +557,7 @@ enum {
   /* note ioctl 11 reserved for filesystem-independent FIEMAP ioctl */
  #define EXT4_IOC_ALLOC_DA_BLKS		_IO('f', 12)
  #define EXT4_IOC_MOVE_EXT		_IOWR('f', 15, struct move_extent)
-+#define EXT4_IOC_RESIZE			_IOW('f', 16, ext4_fsblk_t)
++#define EXT4_IOC_RESIZE_FS		_IOW('f', 16, __u64)
  
  #if defined(__KERNEL__) && defined(CONFIG_COMPAT)
  /*
-@@ -1854,6 +1856,7 @@ extern int ext4_group_add(struct super_block *sb,
+@@ -1879,6 +1880,7 @@ extern int ext4_group_add(struct super_block *sb,
  extern int ext4_group_extend(struct super_block *sb,
  				struct ext4_super_block *es,
  				ext4_fsblk_t n_blocks_count);
-+extern int ext4_resize(struct super_block *sb, ext4_fsblk_t n_blocks_count);
++extern int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count);
  
  /* super.c */
  extern void __ext4_error(struct super_block *, const char *, unsigned int,
 diff --git a/fs/ext4/ioctl.c b/fs/ext4/ioctl.c
-index de405a3..5d15eb2 100644
+index f18bfe3..eeaa1a4 100644
 --- a/fs/ext4/ioctl.c
 +++ b/fs/ext4/ioctl.c
-@@ -347,6 +347,35 @@ group_add_out:
+@@ -335,6 +335,37 @@ mext_out:
  		return err;
  	}
  
-+	case EXT4_IOC_RESIZE: {
++	case EXT4_IOC_RESIZE_FS: {
 +		ext4_fsblk_t n_blocks_count;
 +		struct super_block *sb = inode->i_sb;
 +		int err = 0, err2 = 0;
 +
-+		if (!capable(CAP_SYS_RESOURCE))
-+			return -EPERM;
++		err = ext4_resize_begin(sb);
++		if (err)
++			return err;
 +
 +		if (copy_from_user(&n_blocks_count, (__u64 __user *)arg,
 +				   sizeof(__u64)))
@@ -79,7 +76,7 @@ index de405a3..5d15eb2 100644
 +		if (err)
 +			return err;
 +
-+		err = ext4_resize(sb, n_blocks_count);
++		err = ext4_resize_fs(sb, n_blocks_count);
 +		if (EXT4_SB(sb)->s_journal) {
 +			jbd2_journal_lock_updates(EXT4_SB(sb)->s_journal);
 +			err2 = jbd2_journal_flush(EXT4_SB(sb)->s_journal);
@@ -88,6 +85,7 @@ index de405a3..5d15eb2 100644
 +		if (err == 0)
 +			err = err2;
 +		mnt_drop_write(filp->f_path.mnt);
++		ext4_resize_end(sb);
 +
 +		return err;
 +	}
@@ -96,10 +94,10 @@ index de405a3..5d15eb2 100644
  	{
  		struct super_block *sb = inode->i_sb;
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index 86cd3d5..6d030d1 100644
+index dddc6f1..696bfca 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -1569,3 +1569,175 @@ exit_journal:
+@@ -1861,3 +1861,175 @@ exit_journal:
  exit:
  	return err;
  }
@@ -164,12 +162,12 @@ index 86cd3d5..6d030d1 100644
 +}
 +
 +/*
-+ * ext4_resize() resizes the fs to new size specified by @n_blocks_count
++ * ext4_resize_fs() resizes a fs to new size specified by @n_blocks_count
 + *
 + * @sb: super block of the fs to be resized
 + * @n_blocks_count: the number of blocks resides in the resized fs
 + */
-+int ext4_resize(struct super_block *sb, ext4_fsblk_t n_blocks_count)
++int ext4_resize_fs(struct super_block *sb, ext4_fsblk_t n_blocks_count)
 +{
 +	struct ext4_new_flex_group_data *flex_gd = NULL;
 +	struct ext4_sb_info *sbi = EXT4_SB(sb);

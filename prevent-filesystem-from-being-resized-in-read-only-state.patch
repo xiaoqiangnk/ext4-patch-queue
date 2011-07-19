@@ -4,14 +4,15 @@ A filesystem mounted read-only is not allowed to resized online, because
 offline resizing is allowed on a filesystem mounted read-only.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
-diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index a58754f..78866d9 100644
---- a/fs/ext4/ext4.h
-+++ b/fs/ext4/ext4.h
-@@ -2279,6 +2279,17 @@ static inline int ext4_resize_begin(struct super_block *sb)
+diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
+index 53d9795..a58df7f 100644
+--- a/fs/ext4/resize.c
++++ b/fs/ext4/resize.c
+@@ -33,6 +33,17 @@ int ext4_resize_begin(struct super_block *sb)
  		return -EPERM;
+ 	}
  
- 	/*
++	/*
 +	 * We should not do online-resizing on a filesystem mounted
 +	 * readonly, because we can do offline-resizing by resiz2fs
 +	 * in user space.
@@ -19,10 +20,9 @@ index a58754f..78866d9 100644
 +	if (sb->s_flags & MS_RDONLY) {
 +		ext4_warning(sb, "The filesystem are mounted read-only, "
 +			     "so online resizing is not allowed\n");
-+		return -EIO;
++		return -EPERM;
 +	}
 +
-+	/*
- 	 * We are not allowed to do online-resizing on a filesystem mounted
- 	 * with error, because it can destroy the filesystem easily.
- 	 */
+ 	if (test_and_set_bit_lock(EXT4_RESIZING, &EXT4_SB(sb)->s_resize_flags))
+ 		ret = -EBUSY;
+ 

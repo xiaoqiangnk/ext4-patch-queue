@@ -1,15 +1,15 @@
 ext4: add a new function which allocates bitmaps and inode tables
 
 This patch adds a new function named ext4_allocates_group_table() which
-allcoates block bitmap, inode bitmap and inode table for a flex group and is
+allcoates block bitmaps, inode bitmaps and inode tables for a flex groups and is
 used by resize code.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/resize.c b/fs/ext4/resize.c
-index f5a2410..8ff5092 100644
+index cea16e3..b695318 100644
 --- a/fs/ext4/resize.c
 +++ b/fs/ext4/resize.c
-@@ -161,6 +161,117 @@ void free_flex_gd(struct ext4_new_flex_group_data *flex_gd)
+@@ -190,6 +190,117 @@ void free_flex_gd(struct ext4_new_flex_group_data *flex_gd)
  	kfree(flex_gd);
  }
  
