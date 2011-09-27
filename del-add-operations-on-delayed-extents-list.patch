@@ -1,0 +1,455 @@
+ext4: add operations on delayed extent tree
+
+This patch adds operations on a delayed extent tree.
+
+Signed-off-by; Yongqiang Yang <xiaoqiangnk@gmail.com>
+diff --git a/fs/ext4/Makefile b/fs/ext4/Makefile
+index 56fd8f86..ee16ad3 100644
+--- a/fs/ext4/Makefile
++++ b/fs/ext4/Makefile
+@@ -7,7 +7,7 @@ obj-$(CONFIG_EXT4_FS) += ext4.o
+ ext4-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o page-io.o \
+ 		ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
+ 		ext4_jbd2.o migrate.o mballoc.o block_validity.o move_extent.o \
+-		mmp.o indirect.o
++		mmp.o indirect.o delayed_extents.o
+ 
+ ext4-$(CONFIG_EXT4_FS_XATTR)		+= xattr.o xattr_user.o xattr_trusted.o
+ ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
+diff --git a/fs/ext4/delayed_extents.c b/fs/ext4/delayed_extents.c
+new file mode 100644
+index 0000000..6275b19
+--- /dev/null
++++ b/fs/ext4/delayed_extents.c
+@@ -0,0 +1,390 @@
++/*
++ *  fs/ext4/delayed_extents.c
++ *
++ * Written by Yongqiang Yang <xiaoqiangnk@gmail.com>
++ *
++ * Ext4 delayed-extents-list core functions.
++ */
++
++#include "ext4.h"
++#include "delayed_extents.h"
++#include "ext4_extents.h"
++
++/*
++ * delayed extent implementation for ext4.
++ *
++ *
++ * ==========================================================================
++ * 1. Why delayed extent implementation ?
++ *
++ * Without delayed extent, ext4 identifies a delayed extent by looking up
++ * page cache, this has several deficiencies - complicated, buggy, and
++ * inefficient code.
++ *
++ * FIEMAP, SEEK_HOLE/DATA, bigalloc, punch hole and writeout all need to know if
++ * a block or a range of blocks are belonged to a delayed extent.
++ *
++ * Let us have a look at how they do without delayed extents implementation.
++ *   --	FIEMAP
++ *	FIEMAP looks up page cache to identify delayed allocations from holes.
++ *
++ *   --	SEEK_HOLE/DATA
++ *	SEEK_HOLE/DATA has the same problem as FIEMAP.
++ *
++ *   --	bigalloc
++ *	bigalloc looks up page cache to figure out if a block is already
++ *	under delayed allocation or not to determine whether quota reserving
++ *	is needed for the cluster.
++ *
++ *   -- punch hole
++ *	punch hole looks up page cache to identify a delayed extent.
++ *
++ *   --	writeout
++ *	Writeout looks up whole page cache to see if a buffer is mapped, If
++ *	there are not very many delayed buffers, then it is time comsuming.
++ *
++ * With delayed extents implementation, FIEMAP, SEEK_HOLE/DATA, bigalloc and
++ * writeout can figure out if a block or a range of blocks is under delayed
++ * allocation(belonged to a delayed extent) or not by searching the delayed
++ * extent list.
++ *
++ *
++ * ==========================================================================
++ * 2. ext4 delayed extents impelmentation
++ *
++ *   --	delayed extent
++ *	A delayed extent is a range of blocks which are contiguous logically and
++ *	under delayed allocation.  Unlike extent in ext4, delayed extent in ext4
++ *	is a in-memory struct, there is no corresponding on-disk data.  There is
++ *	no limit on length of delayed extent, so a delayed extent can contain as
++ *	many blocks as they are contiguous logically.
++ *
++ *   --	delayed extent list
++ *	Every inode has a delayed extent list and all under delayed allocation
++ *	blocks are added to the list as dealyed extents.  Delayed extents in
++ *	the list are sorted by logical block no.
++ *
++ *   --	operations on a delayed extent list
++ *	There are three operations on a delayed extent list: find next delayed
++ *	adding a space(a range of blocks) to a list and removing a space from
++ *	a list.
++ *
++ *   --	race on a delayed extent list
++ *	Delayed extent list is protected inode->i_data_sem like extent tree.
++ *
++ *
++ * ==========================================================================
++ * 3. performance analysis
++ *   --	overhead
++ *	1. Apart from operations on a delayed extent list, we need to
++ *	down_write(inode->i_data_sem) in delayed write path to maintain delayed
++ *	extent list, this can have impact on parallel read-write and write-write
++ *
++ *	2. There is a cache extent for write access, so if writes are not very
++ *	random, adding space operaions are in O(1) time.
++ *
++ *   -- gain
++ *	3. Code is much simpler, more readable, more maintainable and
++ *      more efficient.
++ *
++ * 4. TODO
++ *   -- cache_de in de_find_extent
++ *	de_find_extent is used heavily by bgalloc, so de_find_extent should use
++ *	cache_de.
++ *
++ * ==========================================================================
++ * 4. More sophiscated data structure like tree ?
++ * Does we need rb tree instead?
++ *
++ */
++static struct kmem_cache *ext4_de_cachep;
++
++int __init ext4_init_de(void)
++{
++	ext4_de_cachep = KMEM_CACHE(ext4_delayed_extent,
++				    SLAB_RECLAIM_ACCOUNT);
++	if (ext4_de_cachep == NULL)
++		return -ENOMEM;
++	return 0;
++}
++
++void ext4_exit_de(void)
++{
++	kmem_cache_destroy(ext4_de_cachep);
++}
++
++#ifdef DE_DEBUG
++void ext4_de_print_list(struct inode *inode)
++{
++	struct ext4_delayed_info *delayed_info;
++	struct list_head *cur;
++
++	printk(KERN_DEBUG "delayed extents for inode %lu:", inode->i_ino);
++	delayed_info = &EXT4_I(inode)->i_delayed_info;
++	list_for_each(cur, &delayed_info->de_list) {
++		struct ext4_delayed_extent *de;
++		de = list_entry(cur, struct ext4_delayed_extent, de_list);
++		printk(KERN_DEBUG " [%u, %u)", de->de_start, de->de_end);
++	}
++	printk(KERN_DEBUG "\n");
++}
++#else
++#define ext4_de_print_list(inode)
++#endif
++
++#define list_tail(list, type, member)		\
++	list_entry((list)->prev, type, member)
++
++#define list_next(head, elm, member)					\
++	((elm)->member.next != head ?					\
++	list_entry((elm)->member.next, typeof(*elm), member) : NULL)
++
++#define list_prev(head, elm, member)					\
++	((elm)->member.prev != head ?					\
++	list_entry((elm)->member.prev, typeof(*elm), member) : NULL)
++
++/*
++ * ext4_de_first_extent_since: find the 1st delayed extent covering @start
++ * if it exists, otherwise, the next extent after @start.
++ *
++ * @inode: the inode which owns delayed extents
++ * @start: logic block
++ *
++ * Return next delayed block after the found extent.  Delayed extent is returned
++ * the extent is returned via @de.
++ */
++ext4_lblk_t ext4_de_find_extent(struct inode *inode,
++				struct ext4_delayed_extent *de)
++{
++	struct ext4_delayed_info *delayed_info;
++	struct list_head *cur;
++	struct ext4_delayed_extent *de1;
++
++	de->de_end = 0;
++	delayed_info = &EXT4_I(inode)->i_delayed_info;
++	if (list_empty(&delayed_info->de_list))
++		return EXT_MAX_BLOCKS;
++
++	de1 = list_tail(&delayed_info->de_list, struct ext4_delayed_extent,
++			de_list);
++	if (de->de_start >= de1->de_end)
++		return EXT_MAX_BLOCKS;
++
++	list_for_each(cur, &delayed_info->de_list) {
++		de1 = list_entry(cur, struct ext4_delayed_extent, de_list);
++		if (de->de_end != 0)
++			return de1->de_start;
++
++		if (de1->de_end <= de->de_start)
++			/* @de is followed by @*start and they are
++			 * not contiguous.
++			 * |------------|.........|
++			 *	de		*start
++			 */
++			continue;
++		de->de_start = de1->de_start;
++		de->de_end = de1->de_end;
++	}
++
++	BUG_ON(de->de_end == 0);
++	return EXT_MAX_BLOCKS;
++}
++
++static struct ext4_delayed_extent *
++ext4_de_add_entry(struct list_head *head, ext4_lblk_t start, ext4_lblk_t end)
++{
++	struct ext4_delayed_extent *de;
++	de = kmem_cache_alloc(ext4_de_cachep, GFP_NOFS);
++	if (de == NULL)
++		return NULL;
++	de->de_start = start;
++	de->de_end = end;
++	INIT_LIST_HEAD(&de->de_list);
++	list_add(&de->de_list, head);
++	return de;
++}
++
++static void ext4_de_remove_entry(struct inode *inode,
++				 struct ext4_delayed_extent *de)
++{
++	struct ext4_delayed_info *delayed_info = &EXT4_I(inode)->i_delayed_info;
++
++	list_del(&de->de_list);
++	kmem_cache_free(ext4_de_cachep, de);
++	if (delayed_info->cache_de == de)
++		delayed_info->cache_de = NULL;
++}
++
++static void ext4_de_try_to_merge_left(struct inode *inode,
++				      struct ext4_delayed_extent *de)
++{
++	struct ext4_delayed_extent *de1;
++
++	de1 = list_prev(&EXT4_I(inode)->i_delayed_info.de_list, de, de_list);
++	if (de1 && de1->de_end == de->de_start) {
++		de->de_start = de1->de_start;
++		ext4_de_remove_entry(inode, de1);
++	}
++}
++
++static void ext4_de_try_to_merge_right(struct inode *inode,
++				       struct ext4_delayed_extent *de)
++{
++	struct ext4_delayed_extent *de1;
++
++	de1 = list_next(&EXT4_I(inode)->i_delayed_info.de_list, de, de_list);
++	if (de1 && de1->de_start == de->de_end) {
++		de->de_end = de1->de_end;
++		ext4_de_remove_entry(inode, de1);
++	}
++}
++
++/*
++ * ext4_de_add_space() adds a space to a delayed extent list.
++ * Caller hold inode->i_data_sem.
++ *
++ * Return 0 on success, error code on failure.
++ */
++int ext4_de_add_space(struct inode *inode, ext4_lblk_t start, ext4_lblk_t len)
++{
++	ext4_lblk_t end = start + len;
++	struct ext4_delayed_info *delayed_info;
++	struct ext4_delayed_extent *de;
++	struct list_head *cur;
++
++	/* ext4_de_add_space is called with len = 1. */
++	BUG_ON(len != 1);
++	delayed_info = &EXT4_I(inode)->i_delayed_info;
++	de = delayed_info->cache_de;
++	de_debug("add [%u, %u) to delayed extent list of inode %lu\n",
++		 start, end, inode->i_ino);
++
++	if (de && de->de_end == start) {
++		de->de_end = end;
++		ext4_de_try_to_merge_right(inode, de);
++		goto out;
++	} else if (de && de->de_start == end) {
++		de->de_start = start;
++		ext4_de_try_to_merge_left(inode, de);
++		goto out;
++	} else if (de && de->de_start <= start && de->de_end >= end)
++		goto out;
++
++	/* We traverse the list backwards. */
++	list_for_each_prev(cur, &delayed_info->de_list) {
++		de = list_entry(cur, struct ext4_delayed_extent, de_list);
++		if (de->de_start > end)
++			/* de folllows [start, end) and they are
++			 * not contiguous.
++			 * |------------|----|-----------|
++			 *   [start, end)	   de
++			 */
++			continue;
++
++		if (de->de_end == start) {
++			/* de is followed by [start, end) and they are
++			 * contiguous.
++			 * |-----------|---------------|
++			 *	de	  [start, end)
++			 */
++			de->de_end = end;
++			goto out;
++		} else if (de->de_start == end) {
++			/* de follows [start, end) and they are contiguous.
++			 * |-------------|------------|
++			 *  [start, end)	de
++			 */
++			de->de_start = start;
++			ext4_de_try_to_merge_left(inode, de);
++			goto out;
++		} else if (start >= de->de_start && end <= de->de_end)
++			goto out;
++
++		break;
++	}
++
++	de = ext4_de_add_entry(cur, start, end);
++	if (!de)
++		return -ENOMEM;
++out:
++	delayed_info->cache_de = de;
++	ext4_de_print_list(inode);
++
++	return 0;
++}
++
++/*
++ * ext4_de_remove_space() removes a space from a delayed extent list.
++ * Caller hold inode->i_data_sem.
++ *
++ * Return 0 on success, error code on failure.
++ */
++int ext4_de_remove_space(struct inode *inode, ext4_lblk_t start,
++			 ext4_lblk_t len)
++{
++	ext4_lblk_t end = start + len;
++	struct ext4_delayed_info *delayed_info;
++	struct list_head *cur;
++
++	delayed_info = &EXT4_I(inode)->i_delayed_info;
++
++	de_debug("remove [%u, %u) from delayed extent list of inode %lu\n",
++		 start, end, inode->i_ino);
++
++	list_for_each(cur, &delayed_info->de_list) {
++		struct ext4_delayed_extent *de, *new_de;
++		new_de = NULL;
++		de = list_entry(cur, struct ext4_delayed_extent, de_list);
++		if (de->de_end <= start)
++			/* de resides before [start, end)
++			 * |---------|...|-----------|
++			 *      de        [start, end)
++			 */
++			continue;
++
++		if (de->de_start >= end)
++			/* de resides after [start, end)
++			 * |---------|...|-----------|
++			 * [start,end)         de
++			 */
++			break;
++
++		/* de and [start, end) intersect */
++		if (de->de_start < start && de->de_end <= end) {
++			/*
++			 * |-----------------|--------|.........|
++			 * de->de_start   start  de->de_end    end
++			 */
++			de->de_end = start;
++			start = de->de_end;
++		} else if ((de->de_start >= start && de->de_end <= end)) {
++			/*
++			 * |............|--------|.........|
++			 * start    de->start de->end    end
++			 */
++			start = de->de_end;
++			cur = de->de_list.prev;
++			ext4_de_remove_entry(inode, de);
++		} else if (de->de_start < start && de->de_end > end) {
++			/*
++			 * |------------|--------|---------|
++			 * de->start  start     end     de->de_end
++			 */
++			if (!ext4_de_add_entry(&de->de_list, end, de->de_end))
++				return -ENOMEM;
++			de->de_end = start;
++			break;
++		} else if (de->de_start >= start && de->de_end > end) {
++			/*
++			 * |.............|---------|--------|
++			 * start   de->de_start   end   de->de_end
++			 */
++			de->de_start = end;
++			break;
++		} else
++			BUG();
++	}
++
++	ext4_de_print_list(inode);
++	return 0;
++}
+diff --git a/fs/ext4/delayed_extents.h b/fs/ext4/delayed_extents.h
+index b7baaef..dd3bdb5 100644
+--- a/fs/ext4/delayed_extents.h
++++ b/fs/ext4/delayed_extents.h
+@@ -8,6 +8,21 @@
+ #ifndef _EXT4_DELAYED_EXTENTS_H
+ #define _EXT4_DELAYED_EXTENTS_H
+ 
++/*
++ * Turn on DE_DEBUG to get lots of info about delayed extents operations.
++ */
++#define DE_DEBUG__
++#ifdef DE_DEBUG
++#define de_debug(f, a...)						\
++	do {								\
++		printk(KERN_DEBUG "EXT4-fs delayed-extents (%s, %d): "	\
++			"%s:", __FILE__, __LINE__, __func__);		\
++		printk(KERN_DEBUG f, ## a);				\
++	} while (0)
++#else
++#define de_debug(f, a...)
++#endif
++
+ struct ext4_delayed_extent {
+ 	struct list_head de_list;
+ 	ext4_lblk_t de_start;	/* first block extent covers */
+@@ -19,4 +34,14 @@ struct ext4_delayed_info {
+ 	struct ext4_delayed_extent *cache_de;	/* recently accessed extent */
+ };
+ 
++extern int __init ext4_init_de(void);
++extern void ext4_exit_de(void);
++
++extern int ext4_de_add_space(struct inode *inode, ext4_lblk_t start,
++				ext4_lblk_t len);
++extern int ext4_de_remove_space(struct inode *inode, ext4_lblk_t start,
++				ext4_lblk_t len);
++extern ext4_lblk_t ext4_de_find_extent(struct inode *inode,
++				struct ext4_delayed_extent *de);
++
+ #endif /* _EXT4_DELAYED_EXTENTS_H */
