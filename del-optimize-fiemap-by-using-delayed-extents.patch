@@ -1,17 +1,17 @@
-ext4: reimplement fiemap on delayed extent list
+ext4: reimplement fiemap on delayed extent tree
 
-This patch reimplements fiemap on delayed extent list.
+This patch reimplements fiemap on delayed extent tree.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index c9ad622..1c7ded8 100644
+index bdbb984..c2ae125 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -3909,193 +3909,53 @@ static int ext4_ext_fiemap_cb(struct inode *inode, ext4_lblk_t next,
  		       struct ext4_ext_cache *newex, struct ext4_extent *ex,
  		       void *data)
  {
-+	struct ext4_delayed_extent de;
++	struct delayed_extent de;
  	__u64	logical;
  	__u64	physical;
  	__u64	length;
@@ -23,7 +23,7 @@ index c9ad622..1c7ded8 100644
  
 -	blksize_bits = inode->i_sb->s_blocksize_bits;
 -	logical = (__u64)newex->ec_block << blksize_bits;
-+	de.de_start = newex->ec_block;
++	de.start = newex->ec_block;
 +	down_read(&EXT4_I(inode)->i_data_sem);
 +	next_del = ext4_de_find_extent(inode, &de);
 +	up_read(&EXT4_I(inode)->i_data_sem);
@@ -189,13 +189,13 @@ index c9ad622..1c7ded8 100644
 -			for (index = 0; index < ret; index++)
 -				page_cache_release(pages[index]);
 -			goto repeat;
-+		if (de.de_end == 0)
++		if (de.len == 0)
 +			/* A hole found. */
 +			return EXT_CONTINUE;
 +
-+		if (de.de_start > newex->ec_block) {
++		if (de.start > newex->ec_block) {
 +			/* A hole found. */
-+			newex->ec_len = min(de.de_start - newex->ec_block,
++			newex->ec_len = min(de.start - newex->ec_block,
 +					    newex->ec_len);
 +			return EXT_CONTINUE;
  		}
@@ -204,7 +204,7 @@ index c9ad622..1c7ded8 100644
 -			page_cache_release(pages[index]);
 -		kfree(pages);
 +		flags |= FIEMAP_EXTENT_DELALLOC;
-+		newex->ec_len = de.de_end - newex->ec_block;
++		newex->ec_len = de.start + de.len - newex->ec_block;
  	}
  
 -	physical = (__u64)newex->ec_start << blksize_bits;

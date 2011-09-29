@@ -1,13 +1,13 @@
-ext4: let ext4 maintian delayed extent lists
+ext4: let ext4 maintian delayed extent trees
 
-This patch let ext4 maintain delayed extent lists.
+This patch let ext4 maintain delayed extent trees.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index 6c5bfd6..c16b6e9 100644
+index d3c6b97..177ec0a 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -518,6 +518,7 @@ struct ext4_new_group_data {
+@@ -519,6 +519,7 @@ struct ext4_new_group_data {
  #define EXT4_GET_BLOCKS_PUNCH_OUT_EXT		0x0020
  	/* Don't normalize allocation size (used for fallocate) */
  #define EXT4_GET_BLOCKS_NO_NORMALIZE		0x0040
@@ -16,7 +16,7 @@ index 6c5bfd6..c16b6e9 100644
  /*
   * Flags used by ext4_free_blocks
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
-index 475ddf5..c9ad622 100644
+index 9124cd2..bdbb984 100644
 --- a/fs/ext4/extents.c
 +++ b/fs/ext4/extents.c
 @@ -3688,6 +3688,8 @@ void ext4_ext_truncate(struct inode *inode)
@@ -50,10 +50,10 @@ index 0962642..25cdb5b 100644
  	/*
  	 * The orphan list entry will now protect us from any crash which
 diff --git a/fs/ext4/inode.c b/fs/ext4/inode.c
-index c3ce754..bcf5257 100644
+index f86b149..0f9f108 100644
 --- a/fs/ext4/inode.c
 +++ b/fs/ext4/inode.c
-@@ -445,7 +445,15 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
+@@ -442,7 +442,15 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
  	up_read((&EXT4_I(inode)->i_data_sem));
  
  	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
@@ -70,7 +70,7 @@ index c3ce754..bcf5257 100644
  		if (ret != 0)
  			return ret;
  	}
-@@ -520,8 +528,18 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
+@@ -517,8 +525,18 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
  			(flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE))
  			ext4_da_update_reserve_space(inode, retval, 1);
  	}
@@ -90,7 +90,7 @@ index c3ce754..bcf5257 100644
  
  	up_write((&EXT4_I(inode)->i_data_sem));
  	if (retval > 0 && map->m_flags & EXT4_MAP_MAPPED) {
-@@ -1633,6 +1651,12 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
+@@ -1630,6 +1648,12 @@ static int ext4_da_get_block_prep(struct inode *inode, sector_t iblock,
  			/* not enough space to reserve */
  			return ret;
  
@@ -104,7 +104,7 @@ index c3ce754..bcf5257 100644
  		set_buffer_new(bh);
  		set_buffer_delay(bh);
 diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index f0b6fe6..e607823 100644
+index 247fcdd..a248551 100644
 --- a/fs/ext4/super.c
 +++ b/fs/ext4/super.c
 @@ -49,6 +49,7 @@
@@ -115,7 +115,7 @@ index f0b6fe6..e607823 100644
  
  #define CREATE_TRACE_POINTS
  #include <trace/events/ext4.h>
-@@ -968,6 +969,7 @@ void ext4_clear_inode(struct inode *inode)
+@@ -967,6 +968,7 @@ void ext4_clear_inode(struct inode *inode)
  	end_writeback(inode);
  	dquot_drop(inode);
  	ext4_discard_preallocations(inode);
@@ -123,7 +123,7 @@ index f0b6fe6..e607823 100644
  	if (EXT4_I(inode)->jinode) {
  		jbd2_journal_release_jbd_inode(EXT4_JOURNAL(inode),
  					       EXT4_I(inode)->jinode);
-@@ -4985,9 +4987,14 @@ static int __init ext4_init_fs(void)
+@@ -4976,9 +4978,14 @@ static int __init ext4_init_fs(void)
  		init_waitqueue_head(&ext4__ioend_wq[i]);
  	}
  
@@ -139,7 +139,7 @@ index f0b6fe6..e607823 100644
  	err = ext4_init_system_zone();
  	if (err)
  		goto out7;
-@@ -5039,6 +5046,9 @@ out6:
+@@ -5030,6 +5037,9 @@ out6:
  	ext4_exit_system_zone();
  out7:
  	ext4_exit_pageio();

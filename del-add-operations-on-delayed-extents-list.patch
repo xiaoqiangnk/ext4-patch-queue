@@ -18,10 +18,10 @@ index 56fd8f86..ee16ad3 100644
  ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/delayed_extents.c b/fs/ext4/delayed_extents.c
 new file mode 100644
-index 0000000..1c381b2
+index 0000000..8da7b78
 --- /dev/null
 +++ b/fs/ext4/delayed_extents.c
-@@ -0,0 +1,418 @@
+@@ -0,0 +1,412 @@
 +/* 
 + *  fs/ext4/delayed_extents.c
 + *
@@ -146,9 +146,9 @@ index 0000000..1c381b2
 +
 +	printk(KERN_DEBUG "delayed extents for inode %lu:", inode->i_ino);
 +	tree = &EXT4_I(inode)->i_de_tree;
-+	node = rb_first(tree->root);
++	node = rb_first(&tree->root);
 +	while(node) {
-+		struct delayed_extent 
++		struct delayed_extent *de; 
 +		de = rb_entry(node, struct delayed_extent, rb_node);
 +		printk(KERN_DEBUG " [%u/%u)", de->start, de->len);
 +		node = rb_next(node);
@@ -182,7 +182,8 @@ index 0000000..1c381b2
 +			node = node->rb_left;
 +		else if (offset >= delayed_extent_end(de))
 +			node = node->rb_right;
-+		return de;
++		else
++			return de;
 +	}
 +
 +	if (de && offset < de->start)
@@ -219,12 +220,12 @@ index 0000000..1c381b2
 +		de->len = de1->len;
 +		node = rb_next(&de1->rb_node);
 +		if (node) {
-+			de1 = rb_entry(node, struct delayd_extent, rb_node);
++			de1 = rb_entry(node, struct delayed_extent, rb_node);
 +			return de1->start;
 +		}
 +	}
 +
-+	return EXT_MAX_BLOCKS
++	return EXT_MAX_BLOCKS;
 +}
 +
 +static struct delayed_extent *
@@ -237,20 +238,6 @@ index 0000000..1c381b2
 +	de->start = start;
 +	de->len = len;
 +	return de;
-+}
-+
-+static int ext4_de_add_new_extent(struct rb_root *root, struct rb_node *parent,
-+				struct rb_node **rb_link,
-+				ext4_lblk_t start, ext4_lblk_t len)
-+{
-+	struct delayed_extent *de;
-+	de = ext4_de_new_entry(start, len);
-+	if (!de)
-+		return -ENOMEM;
-+	rb_link_node(&de->rb_node, parent, p);
-+	rb_insert_color(&de->rb_node, root);
-+
-+	return 0;
 +}
 +
 +static void ext4_de_free_extent(struct delayed_extent *de)
@@ -310,7 +297,7 @@ index 0000000..1c381b2
 +int ext4_de_add_space(struct inode *inode, ext4_lblk_t offset, ext4_lblk_t len)
 +{
 +	struct ext4_de_tree *tree = &EXT4_I(inode)->i_de_tree;
-+	struct rb_node **p = &&tree->root;
++	struct rb_node **p = &tree->root.rb_node;
 +	struct rb_node *parent = NULL;
 +	struct delayed_extent *de;
 +	ext4_lblk_t end = offset + len;
@@ -319,16 +306,16 @@ index 0000000..1c381b2
 +
 +	de = tree->cache_de;
 +	de_debug("add [%u/%u) to delayed extent list of inode %lu\n",
-+		 start, len, inode->i_ino);
++		 offset, len, inode->i_ino);
 +
 +	if (de && delayed_extent_end(de) == offset) {
 +		de->len += len;
-+		ext4_de_try_to_merge_right(inode, de);
++		ext4_de_try_to_merge_right(tree, de);
 +		goto out;
 +	} else if (de && de->start == end) {
 +		de->start = offset;
 +		de->len += len;
-+		ext4_de_try_to_merge_left(inode, de);
++		ext4_de_try_to_merge_left(tree, de);
 +		goto out;
 +	} else if (de && de->start <= offset &&
 +		   delayed_extent_end(de) >= end)
@@ -341,7 +328,7 @@ index 0000000..1c381b2
 +		if (offset < de->start) {
 +			if (end == de->start) {
 +				de->len += len;
-+				de->start = start;
++				de->start = offset;
 +				goto out;
 +			}
 +			p = &(*p)->rb_left;
@@ -351,13 +338,16 @@ index 0000000..1c381b2
 +				goto out;
 +			}
 +			p = &(*p)->rb_right;
-+		}
-+
-+		goto out;
++		} else
++			goto out;
 +	}
 +
-+	if (ext4_de_add_extent(&tree->root, parent, p, start, len))
++	de = ext4_de_alloc_extent(offset, len);
++	if (!de)
 +		return -ENOMEM;
++	rb_link_node(&de->rb_node, parent, p);
++	rb_insert_color(&de->rb_node, &tree->root);
++
 +out:
 +	tree->cache_de = de;
 +	ext4_de_print_tree(inode);
@@ -374,17 +364,21 @@ index 0000000..1c381b2
 +int ext4_de_remove_space(struct inode *inode, ext4_lblk_t offset,
 +			 ext4_lblk_t len)
 +{
++	struct rb_node *node;
 +	struct ext4_de_tree *tree;
-+	struct ext4_de_extent *de;
-+	struct ext4_de_extent orig_de;
++	struct delayed_extent *de;
++	struct delayed_extent orig_de;
 +	ext4_lblk_t len1, len2, end;
++
++	de_debug("remove [%u/%u) from delayed extent list of inode %lu\n",
++		 offset, len, inode->i_ino);
 +
 +	end = offset + len;
 +	BUG_ON(end <= offset);
 +	tree = &EXT4_I(inode)->i_de_tree;
-+	de = __de_tree_search(&tree->root, start);
++	de = __de_tree_search(&tree->root, offset);
 +	if (!de)
-+		return 0;
++		goto out;
 +
 +	orig_de.start = de->start;
 +	orig_de.len = de->len;
@@ -399,7 +393,7 @@ index 0000000..1c381b2
 +			err = ext4_de_add_space(inode, end, len2);
 +			if (err) {
 +				de->start = orig_de.start;
-+				de->len = orig.len;
++				de->len = orig_de.len;
 +				return err;
 +			}
 +		} else {
@@ -431,7 +425,7 @@ index 0000000..1c381b2
 +	}
 +
 +	if (de && de->start < end) {
-+		len1 = delayed_extent-end(de) - end;
++		len1 = delayed_extent_end(de) - end;
 +		de->start = end;
 +		de->len = len1;
 +	}
@@ -441,13 +435,14 @@ index 0000000..1c381b2
 +	return 0;
 +}
 diff --git a/fs/ext4/delayed_extents.h b/fs/ext4/delayed_extents.h
-index 66d6390..a090072 100644
+index 66d6390..3f649d9 100644
 --- a/fs/ext4/delayed_extents.h
 +++ b/fs/ext4/delayed_extents.h
-@@ -8,6 +8,12 @@
+@@ -8,6 +8,13 @@
  #ifndef _EXT4_DELAYED_EXTENTS_H
  #define _EXT4_DELAYED_EXTENTS_H
  
++#define DE_DEBUG
 +#ifdef DE_DEBUG
 +#define de_debug(a...)		printk(a)
 +#else
@@ -457,7 +452,7 @@ index 66d6390..a090072 100644
  struct delayed_extent {
  	struct rb_node rb_node;
  	ext4_lblk_t start;	/* first block extent covers */
-@@ -19,4 +25,15 @@ struct ext4_de_tree {
+@@ -19,4 +26,15 @@ struct ext4_de_tree {
  	struct delayed_extent *cache_de;	/* recently accessed extent */
  };
  

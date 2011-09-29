@@ -1,6 +1,6 @@
-ext4: add two structures delayed extent list nees
+ext4: add two structures supporting delayed extent implementation
 
-This patch adds two structures that delayed extent list needs.
+This patch adds two structures that supports delayed extent implementation.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/delayed_extents.h b/fs/ext4/delayed_extents.h

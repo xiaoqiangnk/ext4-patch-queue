@@ -1,10 +1,10 @@
 ext4: add a delayed extents tree in inode info
 
-This patch adds a delayed extents list in inode, so that
+This patch adds a delayed extents tree in inode info, so that
 delayed extents can be look up quickly.  Without the tree
 delayed extents are identified by looking up page cache.
 
-With the list, FIEMAP, SEEK_HOLE/DATA, bigalloc and writeout
+With the tree, FIEMAP, SEEK_HOLE/DATA, bigalloc and writeout
 path can be optimized a lot.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
