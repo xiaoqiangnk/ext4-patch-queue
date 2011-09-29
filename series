@@ -1,6 +1,7 @@
 del-add-two-structure.patch
 del-add-delayed-extents-list-in-inode.patch
 del-add-operations-on-delayed-extents-list.patch
+del-initialize-delayed-extent-tree.patch
 del-add-space-to-delayed-extent-list.patch
 del-optimize-fiemap-by-using-delayed-extents.patch
 del_reimplement_find_delay_alloc_range.patch

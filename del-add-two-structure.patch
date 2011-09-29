@@ -5,7 +5,7 @@ This patch adds two structures that delayed extent list needs.
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/delayed_extents.h b/fs/ext4/delayed_extents.h
 new file mode 100644
-index 0000000..b7baaef
+index 0000000..66d6390
 --- /dev/null
 +++ b/fs/ext4/delayed_extents.h
 @@ -0,0 +1,22 @@
@@ -19,15 +19,15 @@ index 0000000..b7baaef
 +#ifndef _EXT4_DELAYED_EXTENTS_H
 +#define _EXT4_DELAYED_EXTENTS_H
 +
-+struct ext4_delayed_extent {
-+	struct list_head de_list;
-+	ext4_lblk_t de_start;	/* first block extent covers */
-+	ext4_lblk_t de_end;	/* block at which extent ends */
++struct delayed_extent {
++	struct rb_node rb_node;
++	ext4_lblk_t start;	/* first block extent covers */
++	ext4_lblk_t len;	/* length of extent ib block */
 +};
 +
-+struct ext4_delayed_info {
-+	struct list_head de_list;
-+	struct ext4_delayed_extent *cache_de;	/* recently accessed extent */
++struct ext4_de_tree {
++	struct rb_root root;
++	struct delayed_extent *cache_de;	/* recently accessed extent */
 +};
 +
 +#endif /* _EXT4_DELAYED_EXTENTS_H */

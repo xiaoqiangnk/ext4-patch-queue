@@ -1,4 +1,4 @@
-ext4: add a delayed extents list in inode
+ext4: add a delayed extents tree in inode info
 
 This patch adds a delayed extents list in inode, so that
 delayed extents can be look up quickly.  Without the tree
@@ -9,10 +9,10 @@ path can be optimized a lot.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
 diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index b4bff1a..6c5bfd6 100644
+index ccfa81f..d3c6b97 100644
 --- a/fs/ext4/ext4.h
 +++ b/fs/ext4/ext4.h
-@@ -759,6 +759,8 @@ struct ext4_ext_cache {
+@@ -760,6 +760,8 @@ struct ext4_ext_cache {
  	__u32		ec_len; /* must be 32bit to return holes */
  };
  
@@ -21,26 +21,13 @@ index b4bff1a..6c5bfd6 100644
  /*
   * fourth extended file system inode data in memory
   */
-@@ -836,6 +838,9 @@ struct ext4_inode_info {
+@@ -837,6 +839,9 @@ struct ext4_inode_info {
  	struct list_head i_prealloc_list;
  	spinlock_t i_prealloc_lock;
  
-+	/* delayed_extents.c */
-+	struct ext4_delayed_info i_delayed_info;
++	/* delayed extents */
++	struct ext4_de_tree i_de_tree;
 +
  	/* ialloc */
  	ext4_group_t	i_last_alloc_group;
  
-diff --git a/fs/ext4/super.c b/fs/ext4/super.c
-index c3e3a80..f0b6fe6 100644
---- a/fs/ext4/super.c
-+++ b/fs/ext4/super.c
-@@ -880,6 +880,8 @@ static struct inode *ext4_alloc_inode(struct super_block *sb)
- 	ei->vfs_inode.i_version = 1;
- 	ei->vfs_inode.i_data.writeback_index = 0;
- 	memset(&ei->i_cached_extent, 0, sizeof(struct ext4_ext_cache));
-+	memset(&ei->i_delayed_info, 0, sizeof(struct ext4_delayed_info));
-+	INIT_LIST_HEAD(&ei->i_delayed_info.de_list);
- 	INIT_LIST_HEAD(&ei->i_prealloc_list);
- 	spin_lock_init(&ei->i_prealloc_lock);
- 	ei->i_reserved_data_blocks = 0;
