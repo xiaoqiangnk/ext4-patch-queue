@@ -3,18 +3,6 @@ ext4: let ext4 maintian delayed extent trees
 This patch let ext4 maintain delayed extent trees.
 
 Signed-off-by: Yongqiang Yang <xiaoqiangnk@gmail.com>
-diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
-index d3c6b97..177ec0a 100644
---- a/fs/ext4/ext4.h
-+++ b/fs/ext4/ext4.h
-@@ -519,6 +519,7 @@ struct ext4_new_group_data {
- #define EXT4_GET_BLOCKS_PUNCH_OUT_EXT		0x0020
- 	/* Don't normalize allocation size (used for fallocate) */
- #define EXT4_GET_BLOCKS_NO_NORMALIZE		0x0040
-+#define EXT4_GET_BLOCKS_DEALLOC			0x0080
- 
- /*
-  * Flags used by ext4_free_blocks
 diff --git a/fs/ext4/extents.c b/fs/ext4/extents.c
 index 9124cd2..bdbb984 100644
 --- a/fs/ext4/extents.c

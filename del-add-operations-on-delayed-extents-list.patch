@@ -18,10 +18,10 @@ index 56fd8f86..ee16ad3 100644
  ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
 diff --git a/fs/ext4/delayed_extents.c b/fs/ext4/delayed_extents.c
 new file mode 100644
-index 0000000..8da7b78
+index 0000000..4442d0f
 --- /dev/null
 +++ b/fs/ext4/delayed_extents.c
-@@ -0,0 +1,412 @@
+@@ -0,0 +1,413 @@
 +/* 
 + *  fs/ext4/delayed_extents.c
 + *
@@ -189,19 +189,20 @@ index 0000000..8da7b78
 +	if (de && offset < de->start)
 +		return de;
 +
-+	if (de && offset >= delayed_extent_end(de))
-+		return rb_entry(rb_next(&de->rb_node),
-+				struct delayed_extent, rb_node);
++	if (de && offset >= delayed_extent_end(de)) {
++		node = rb_next(&de->rb_node);
++		return node ? rb_entry(node) : NULL;
++	}
 +
 +	return NULL;
 +}
 +
 +/*
-+ * ext4_de_first_extent_since: find the 1st delayed extent covering @start
-+ * if it exists, otherwise, the next extent after @start.
++ * ext4_de_first_extent: find the 1st delayed extent covering @de->start
++ * if it exists, otherwise, the next extent after @de->start.
 + *
 + * @inode: the inode which owns delayed extents
-+ * @offset: logic block
++ * @de:  
 + *
 + * Returns next block beyond the found extent.
 + * Delayed extent is returned via @de. 
@@ -305,7 +306,7 @@ index 0000000..8da7b78
 +	BUG_ON(end <= offset);
 +
 +	de = tree->cache_de;
-+	de_debug("add [%u/%u) to delayed extent list of inode %lu\n",
++	de_debug("add [%u/%u) to delayed extent tree of inode %lu\n",
 +		 offset, len, inode->i_ino);
 +
 +	if (de && delayed_extent_end(de) == offset) {
@@ -332,7 +333,7 @@ index 0000000..8da7b78
 +				goto out;
 +			}
 +			p = &(*p)->rb_left;
-+		} else if (offset > delayed_extent_end(de)) {
++		} else if (offset >= delayed_extent_end(de)) {
 +			if (delayed_extent_end(de) == offset) {
 +				de->len += len;
 +				goto out;
@@ -370,7 +371,7 @@ index 0000000..8da7b78
 +	struct delayed_extent orig_de;
 +	ext4_lblk_t len1, len2, end;
 +
-+	de_debug("remove [%u/%u) from delayed extent list of inode %lu\n",
++	de_debug("remove [%u/%u) from delayed extent tree of inode %lu\n",
 +		 offset, len, inode->i_ino);
 +
 +	end = offset + len;

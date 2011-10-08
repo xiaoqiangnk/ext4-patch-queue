@@ -1,5 +1,4 @@
 del-add-two-structure.patch
-del-add-delayed-extents-list-in-inode.patch
 del-add-operations-on-delayed-extents-list.patch
 del-initialize-delayed-extent-tree.patch
 del-add-space-to-delayed-extent-list.patch
